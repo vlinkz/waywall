@@ -2,12 +2,15 @@
 #define WAYWALL_SERVER_GL_H
 
 #include "util/box.h"
+#include "util/list.h"
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 #include <stdbool.h>
 #include <wayland-server-core.h>
+
+LIST_DEFINE(struct server_drm_format, list_server_drm_format);
 
 #define server_gl_with(gl, surface)                                                                \
     for (int _glscope = (server_gl_enter((gl), (surface)), 0); _glscope == 0;                      \
@@ -30,6 +33,7 @@ struct server_gl {
         PFNEGLDESTROYIMAGEKHRPROC DestroyImageKHR;
         PFNEGLGETPLATFORMDISPLAYEXTPROC GetPlatformDisplayEXT;
         PFNGLEGLIMAGETARGETTEXTURE2DOESPROC ImageTargetTexture2DOES;
+        PFNEGLQUERYDMABUFFORMATSEXTPROC QueryDmaBufFormatsEXT;
         PFNEGLQUERYDMABUFMODIFIERSEXTPROC QueryDmaBufModifiersEXT;
 
         EGLDisplay display;
@@ -49,6 +53,8 @@ struct server_gl {
         struct server_surface *surface;
         struct wl_list buffers; // gl_buffer.link
         struct server_gl_buffer *current;
+
+        struct list_server_drm_format formats;
     } capture;
 
     struct wl_listener on_surface_commit;
