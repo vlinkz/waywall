@@ -35,6 +35,7 @@ static constexpr int USE_CURSOR_SHAPE_VERSION = 1;
 static constexpr int USE_DATA_DEVICE_MANAGER_VERSION = 2;
 static constexpr int USE_LINUX_DMABUF_VERSION = 4;
 static constexpr int USE_LINUX_DRM_SYNCOBJ_VERSION = 1;
+static constexpr int USE_OUTPUT_VERSION = 2;
 static constexpr int USE_POINTER_CONSTRAINTS_VERSION = 1;
 static constexpr int USE_RELATIVE_POINTER_MANAGER_VERSION = 1;
 static constexpr int USE_SEAT_VERSION = 5;
@@ -117,6 +118,41 @@ static const struct xdg_wm_base_listener xdg_wm_base_listener = {
 };
 
 static void
+on_output_geometry(void *data, struct wl_output *wl_output, int32_t x, int32_t y,
+                   int32_t pw, int32_t ph, int32_t subpixel, const char *make,
+                   const char *model, int32_t transform) {
+    // Unused.
+}
+
+static void
+on_output_mode(void *data, struct wl_output *wl_output, uint32_t flags, int32_t width,
+               int32_t height, int32_t refresh) {
+    struct server_backend *backend = data;
+
+    if (flags & WL_OUTPUT_MODE_CURRENT) {
+        backend->output_width = width;
+        backend->output_height = height;
+    }
+}
+
+static void
+on_output_done(void *data, struct wl_output *wl_output) {
+    // Unused.
+}
+
+static void
+on_output_scale(void *data, struct wl_output *wl_output, int32_t factor) {
+    // Unused.
+}
+
+static const struct wl_output_listener output_listener = {
+    .geometry = on_output_geometry,
+    .mode = on_output_mode,
+    .done = on_output_done,
+    .scale = on_output_scale,
+};
+
+static void
 on_registry_global(void *data, struct wl_registry *wl, uint32_t name, const char *iface,
                    uint32_t version) {
     struct server_backend *backend = data;
@@ -182,6 +218,21 @@ on_registry_global(void *data, struct wl_registry *wl, uint32_t name, const char
         backend->linux_drm_syncobj_manager = wl_registry_bind(
             wl, name, &wp_linux_drm_syncobj_manager_v1_interface, USE_LINUX_DRM_SYNCOBJ_VERSION);
         check_alloc(backend->linux_drm_syncobj_manager);
+    } else if (strcmp(iface, wl_output_interface.name) == 0) {
+        if (version < USE_OUTPUT_VERSION) {
+            ww_log(LOG_WARN, "host compositor provides outdated wl_output (%d < %d)", version,
+                   USE_OUTPUT_VERSION);
+            return;
+        }
+
+        // Only bind to the first output
+        if (!backend->output) {
+            backend->output = wl_registry_bind(wl, name, &wl_output_interface, USE_OUTPUT_VERSION);
+            check_alloc(backend->output);
+
+            wl_output_add_listener(backend->output, &output_listener, backend);
+            wl_display_roundtrip(backend->display);
+        }
     } else if (strcmp(iface, zwp_pointer_constraints_v1_interface.name) == 0) {
         if (version < USE_POINTER_CONSTRAINTS_VERSION) {
             ww_log(LOG_ERROR, "host compositor provides outdated zwp_pointer_constraints (%d < %d)",
@@ -440,6 +491,9 @@ server_backend_destroy(struct server_backend *backend) {
     }
     if (backend->linux_drm_syncobj_manager) {
         wp_linux_drm_syncobj_manager_v1_destroy(backend->linux_drm_syncobj_manager);
+    }
+    if (backend->output) {
+        wl_output_destroy(backend->output);
     }
     if (backend->single_pixel_buffer_manager) {
         wp_single_pixel_buffer_manager_v1_destroy(backend->single_pixel_buffer_manager);
